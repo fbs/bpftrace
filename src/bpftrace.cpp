@@ -521,7 +521,7 @@ void perf_event_printer(void *cb_cookie, void *data, int size __attribute__((unu
   else if (printf_id == asyncactionint(AsyncAction::print))
   {
     auto print = static_cast<AsyncEvent::Print *>(data);
-    IMap &map = bpftrace->get_map_by_id(print->mapid);
+    IMap &map = bpftrace->maps[print->mapid];
 
     err = bpftrace->print_map(map, print->top, print->div);
 
@@ -546,7 +546,7 @@ void perf_event_printer(void *cb_cookie, void *data, int size __attribute__((unu
   else if (printf_id == asyncactionint(AsyncAction::clear))
   {
     auto mapevent = static_cast<AsyncEvent::MapEvent *>(data);
-    IMap &map = bpftrace->get_map_by_id(mapevent->mapid);
+    IMap &map = bpftrace->maps[mapevent->mapid];
     err = bpftrace->clear_map(map);
     if (err)
       throw std::runtime_error("Could not clear map with ident \"" + map.name_ +
@@ -556,7 +556,7 @@ void perf_event_printer(void *cb_cookie, void *data, int size __attribute__((unu
   else if (printf_id == asyncactionint(AsyncAction::zero))
   {
     auto mapevent = static_cast<AsyncEvent::MapEvent *>(data);
-    IMap &map = bpftrace->get_map_by_id(mapevent->mapid);
+    IMap &map = bpftrace->maps[mapevent->mapid];
     err = bpftrace->zero_map(map);
     if (err)
       throw std::runtime_error("Could not zero map with ident \"" + map.name_ +
@@ -1149,9 +1149,9 @@ void BPFtrace::poll_perf_events(int epollfd, bool drain)
 
 int BPFtrace::print_maps()
 {
-  for(auto &mapmap : maps_)
+  for (auto &mapmap : maps)
   {
-    int err = print_map(*mapmap.second.get(), 0, 0);
+    int err = print_map(*mapmap.get(), 0, 0);
     if (err)
       return err;
   }

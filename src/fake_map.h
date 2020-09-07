@@ -1,6 +1,6 @@
 #pragma once
 
-#include "imap.h"
+#include "map.h"
 
 namespace bpftrace {
 
@@ -12,6 +12,7 @@ public:
   FakeMap(enum bpf_map_type map_type);
 
   static int next_mapfd_;
+  int mapfd_;
 };
 
 } // namespace bpftrace

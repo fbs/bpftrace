@@ -137,4 +137,29 @@ Map::~Map()
     close(mapfd_);
 }
 
+void MapManager::Add(std::unique_ptr<IMap> map)
+{
+  auto name = map->name_;
+  auto count = maps_by_name_.count(name);
+  if (count > 0)
+    throw std::runtime_error("Map with name: @" + name + " already exists");
+
+  std::shared_ptr<IMap> smap = std::move(map);
+
+  maps_by_name_[name] = smap;
+  maps_by_id_.emplace_back(smap);
+
+  smap->id = maps_by_id_.size();
+}
+
+IMap &MapManager::Lookup(const std::string &name)
+{
+  return *maps_by_name_[name];
+}
+
+IMap &MapManager::Lookup(ssize_t id)
+{
+  return *maps_by_id_[id];
+}
+
 } // namespace bpftrace

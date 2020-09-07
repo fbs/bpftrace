@@ -289,7 +289,7 @@ CallInst *IRBuilderBPF::CreateBpfPseudoCall(int mapfd)
 
 CallInst *IRBuilderBPF::CreateBpfPseudoCall(Map &map)
 {
-  int mapfd = bpftrace_.maps_[map.ident]->mapfd_;
+  int mapfd = bpftrace_.maps[map.ident].mapfd_;
   return CreateBpfPseudoCall(mapfd);
 }
 
@@ -326,7 +326,7 @@ Value *IRBuilderBPF::CreateMapLookupElem(Value *ctx,
                                          const location &loc)
 {
   assert(ctx && ctx->getType() == getInt8PtrTy());
-  int mapfd = bpftrace_.maps_[map.ident]->mapfd_;
+  int mapfd = bpftrace_.maps[map.ident].mapfd_;
   return CreateMapLookupElem(ctx, mapfd, key, map.type, loc);
 }
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "imap.h"
+#include <map>
+#include <memory>
 
 namespace bpftrace {
 
@@ -29,6 +31,49 @@ public:
                  int value_size,
                  int max_entries,
                  int flags);
+};
+
+class MapManager
+{
+public:
+  MapManager(){};
+
+  MapManager(const MapManager &) = delete;
+  MapManager &operator=(const MapManager &) = delete;
+  MapManager(MapManager &&) = delete;
+  MapManager &operator=(MapManager &&) = delete;
+
+  void Add(std::unique_ptr<IMap> map);
+  IMap &Lookup(const std::string &name);
+  IMap &Lookup(ssize_t id);
+
+  IMap &operator[](ssize_t id)
+  {
+    return Lookup(id);
+  };
+  IMap &operator[](const std::string &name)
+  {
+    return Lookup(name);
+  };
+
+  auto begin()
+  {
+    return maps_by_id_.begin();
+  };
+  auto end()
+  {
+    return maps_by_id_.end();
+  };
+
+private:
+  std::vector<std::shared_ptr<IMap>> maps_by_id_;
+  std::map<std::string, std::shared_ptr<IMap>> maps_by_name_;
+  uint32_t id_ = 1;
+
+  uint32_t GetID()
+  {
+    return id_++;
+  };
 };
 
 } // namespace bpftrace

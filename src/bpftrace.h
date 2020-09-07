@@ -14,7 +14,7 @@
 #include "bpffeature.h"
 #include "btf.h"
 #include "child.h"
-#include "imap.h"
+#include "map.h"
 #include "output.h"
 #include "printf.h"
 #include "procmon.h"
@@ -101,10 +101,6 @@ public:
   inline int next_probe_id() {
     return next_probe_id_++;
   };
-  inline IMap &get_map_by_id(uint32_t id)
-  {
-    return *maps_[map_ids_[id]].get();
-  };
   std::string get_stack(uint64_t stackidpid, bool ustack, StackType stack_type, int indent=0);
   std::string resolve_buf(char *buf, size_t size);
   std::string resolve_ksym(uintptr_t addr, bool show_offset=false);
@@ -135,11 +131,7 @@ public:
   // Global variable checking if an exit signal was received
   static volatile sig_atomic_t exitsig_recv;
 
-  std::map<std::string, std::unique_ptr<IMap>> maps_;
-
-  // Maps a map id back to the map identifier. See get_map_by_id()
-  std::vector<std::string> map_ids_;
-
+  MapManager maps;
   std::map<std::string, Struct> structs_;
   std::map<std::string, std::string> macros_;
   std::map<std::string, uint64_t> enums_;
