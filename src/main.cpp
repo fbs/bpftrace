@@ -29,6 +29,7 @@
 #include "procmon.h"
 #include "semantic_analyser.h"
 #include "tracepoint_format_parser.h"
+#include "transform_positional_params.h"
 
 using namespace bpftrace;
 
@@ -681,9 +682,6 @@ int main(int argc, char *argv[])
   if (!cmd_str.empty())
     bpftrace.cmd_ = cmd_str;
 
-  if (TracepointFormatParser::parse(driver.root_, bpftrace) == false)
-    return 1;
-
   if (bt_debug != DebugLevel::kNone)
   {
     std::cout << "\nAST\n";
@@ -692,6 +690,9 @@ int main(int argc, char *argv[])
     printer.print(driver.root_);
     std::cout << std::endl;
   }
+
+  if (TracepointFormatParser::parse(driver.root_, bpftrace) == false)
+    return 1;
 
   ClangParser clang;
   std::vector<std::string> extra_flags;
@@ -733,6 +734,20 @@ int main(int argc, char *argv[])
   err = driver.parse();
   if (err)
     return err;
+
+  {
+    auto oldroot = driver.root_;
+    ast::PositionalParamTransformer t(&bpftrace);
+    driver.root_ = static_cast<ast::Program*>(t.Visit(*oldroot));
+    if (bt_debug != DebugLevel::kNone)
+    {
+      std::cout << "\nnew AST\n";
+      std::cout << "-------------------\n";
+      ast::Printer printer(std::cout);
+      printer.print(driver.root_);
+      std::cout << std::endl;
+    }
+  }
 
   ast::SemanticAnalyser semantics(driver.root_, bpftrace, !cmd_str.empty());
   err = semantics.analyse();
