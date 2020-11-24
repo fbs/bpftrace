@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <memory>
 #include <functional>
+#include <vector>
+#include <optional>
 
 namespace bpftrace{
 
@@ -11,11 +13,12 @@ class BPFtrace;
 
 namespace ast {
 
+class Node;
 
 /**
-   Result of running a pass
+   Result of a pass run
  */
-class PassResult
+struct PassResult
 {
 public:
   bool success;
@@ -24,7 +27,7 @@ public:
 };
 
 /**
-   Context/config to pass to a pass
+   Context/config for passes
 */
 struct PassContext
 {
@@ -74,8 +77,23 @@ public:
   MutatePass(std::string name, PassFPtr fn) : Pass(name, fn) {};
 };
 
+struct PMResult {
+  Node * root;
+  bool success;
+  std::string failed_pass;
+  std::string error;
+};
+
 class PassManager
 {
+public:
+  PassManager() = default;
+
+  void AddPass(Pass p);
+  PMResult Run(Node &n, PassContext &ctx);
+
+private:
+  std::vector<Pass> passes_;
 };
 
 } // namespace ast
