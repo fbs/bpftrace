@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "ast/node_counter.h"
+#include "pass_manager.h"
 #include "bpffeature.h"
 #include "bpforc.h"
 #include "bpftrace.h"
@@ -267,6 +268,12 @@ static std::optional<struct timespec> get_boottime()
                     "builtin may be inaccurate";
 
   return ret;
+}
+
+PassManager CreatePM()
+{
+  PassManager pm();
+  pm.AddPass();
 }
 
 int main(int argc, char *argv[])

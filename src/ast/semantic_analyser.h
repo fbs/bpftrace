@@ -114,5 +114,7 @@ private:
   bool has_child_ = false;
 };
 
+Pass CreateSemanticPass();
+
 } // namespace ast
 } // namespace bpftrace

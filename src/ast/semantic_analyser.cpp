@@ -2867,5 +2867,19 @@ void SemanticAnalyser::accept_statements(StatementList *stmts)
   }
 }
 
+
+Pass CreateSemanticPass() {
+  auto fn = [](Node &n, const PassContext &ctx) {
+    SemanticAnalyser pass(n, ctx.b, ctx.has_child);
+    auto err = pass.analyse();
+    PassResult res;
+    res.success = !!err;
+    return res;
+  };
+
+  return MutatePass("Semantic", fn);
+};
+
+
 } // namespace ast
 } // namespace bpftrace
