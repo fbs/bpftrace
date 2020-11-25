@@ -40,7 +40,7 @@ private:
 class SemanticAnalyser;
 struct PassContext
 {
-  BPFtrace &b;
+  BPFtrace& b;
   bool has_child;
   size_t max_ast_nodes;
   std::unique_ptr<SemanticAnalyser> semant;
