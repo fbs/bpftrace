@@ -120,6 +120,7 @@ static void enforce_infinite_rlimit() {
 
 bool is_root()
 {
+  return true;
   if (geteuid() != 0)
   {
     LOG(ERROR) << "bpftrace currently only supports running as the root user.";
@@ -270,10 +271,14 @@ static std::optional<struct timespec> get_boottime()
   return ret;
 }
 
-PassManager CreatePM()
+ast::PassManager CreatePM()
 {
-  PassManager pm();
-  pm.AddPass();
+  ast::PassManager pm;
+  pm.AddPass(ast::CreatePositionalParamPass());
+  pm.AddPass(ast::CreateSemanticPass());
+  pm.AddPass(ast::CreateCounterPass());
+  pm.AddPass(ast::CreateMapCreatePass());
+  return pm;
 }
 
 int main(int argc, char *argv[])
@@ -756,44 +761,12 @@ int main(int argc, char *argv[])
     }
   }
 
-  ast::SemanticAnalyser semantics(driver.root_, bpftrace, !cmd_str.empty());
-  err = semantics.analyse();
-  if (err)
-    return err;
+  ast::PassContext ctx = {.b = bpftrace};
+  ctx.has_child = !cmd_str.empty();
+  ctx.max_ast_nodes = node_max;
 
-  if (bt_debug != DebugLevel::kNone)
-  {
-    std::cout << "\nAST after semantic analysis\n";
-    std::cout << "-------------------\n";
-    ast::Printer printer(std::cout, true);
-    printer.print(driver.root_);
-    std::cout << std::endl;
-  }
-
-  // Count AST nodes
-  uint64_t node_count = 0;
-  {
-    ast::NodeCounter c;
-    c.Visit(*driver.root_);
-    node_count = c.get_count();
-  }
-  if (bt_verbose)
-  {
-    LOG(INFO) << "node count: " << node_count;
-  }
-  if (node_count >= node_max)
-  {
-    LOG(ERROR) << "node count (" << node_count << ") exceeds the limit ("
-               << node_max << ")";
-    return 1;
-  }
-
-  if (test_mode == TestMode::SEMANTIC)
-    return 0;
-
-  err = semantics.create_maps(bt_debug != DebugLevel::kNone);
-  if (err)
-    return err;
+  auto pm = CreatePM();
+  pm.Run(*driver.root_, ctx);
 
   if (!cmd_str.empty())
   {

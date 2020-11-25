@@ -23,28 +23,36 @@ void PassManager::AddPass(Pass p)
   passes_.push_back(std::move(p));
 }
 
-PMResult PassManager::Run(Node &n, PassContext &ctx)
+std::optional<Node *> PassManager::Run(Node &n, PassContext &ctx)
 {
   Node * root = &n;
   for (auto &pass : passes_)
   {
     auto result = pass.Run(*root, ctx);
-    if (!result.success)
-    {
-      return {
-        .root = nullptr,
-        .success = false,
-        .failed_pass = pass.name,
-        .error = result.error,
-      };
-    }
+    if (!result.Ok())
+      return {};
     delete root;
-    root = result.root;
+    root = result.Root();
     if (bt_debug != DebugLevel::kNone)
       print(root, pass.name, std::cout);
   }
-  return { .root = root, .success = true };
+  return root;
 }
 
+PassResult PassResult::Error(const std::string &msg)
+{
+  PassResult p;
+  p.success_ = false;
+  p.error_ = msg;
+  return p;
+}
+
+PassResult PassResult::Success(Node *root)
+{
+  PassResult p;
+  p.success_ = true;
+  p.root_ = root;
+  return p;
+}
 } // namespace ast
 } // namespace bpftrace

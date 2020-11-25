@@ -141,13 +141,10 @@ Node *PositionalParamTransformer::visit(Call &call)
 }
 
 Pass CreatePositionalParamPass(){
-  auto fn = [](Node &n, const PassContext &ctx) {
+  auto fn = [](Node &n, PassContext &ctx) {
     auto pass = PositionalParamTransformer(&ctx.b);
     auto newroot = pass.Visit(n);
-    PassResult res;
-    res.success = true;
-    res.root = newroot;
-    return res;
+    return PassResult::Success(newroot);
   };
 
   return MutatePass("RemovePositionalParams", fn);

@@ -9,6 +9,7 @@
 #include "map.h"
 #include "types.h"
 #include "visitors.h"
+#include "pass_manager.h"
 
 namespace bpftrace {
 namespace ast {
@@ -115,6 +116,6 @@ private:
 };
 
 Pass CreateSemanticPass();
-
+Pass CreateMapCreatePass();
 } // namespace ast
 } // namespace bpftrace

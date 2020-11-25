@@ -3,6 +3,7 @@
 #include <typeindex>
 #include <typeinfo>
 #include <unordered_map>
+#include <stdexcept>
 
 namespace bpftrace {
 namespace ast {

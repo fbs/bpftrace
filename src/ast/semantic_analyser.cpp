@@ -2869,16 +2869,28 @@ void SemanticAnalyser::accept_statements(StatementList *stmts)
 
 
 Pass CreateSemanticPass() {
-  auto fn = [](Node &n, const PassContext &ctx) {
-    SemanticAnalyser pass(n, ctx.b, ctx.has_child);
-    auto err = pass.analyse();
-    PassResult res;
-    res.success = !!err;
-    return res;
+  auto fn = [](Node &n, PassContext &ctx) {
+    ctx.semant  = std::make_unique<SemanticAnalyser>(&n, ctx.b, ctx.has_child);
+    auto err = ctx.semant->analyse();
+    if (err)
+      return PassResult::Error("");
+    return PassResult::Success();
   };
 
-  return MutatePass("Semantic", fn);
+  return AnalysePass("Semantic", fn);
 };
+
+Pass CreateMapCreatePass() {
+  auto fn = [](Node &n __attribute__((unused)), PassContext &ctx) {
+    auto err = ctx.semant->create_maps(bt_debug != DebugLevel::kNone);
+    if (err)
+      return PassResult::Error("");
+    return PassResult::Success();
+  };
+
+  return AnalysePass("MapCreate", fn);
+
+}
 
 
 } // namespace ast

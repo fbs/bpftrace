@@ -18,23 +18,35 @@ class Node;
 /**
    Result of a pass run
  */
-struct PassResult
+class PassResult
 {
 public:
-  bool success;
-  std::string error;
-  Node * root = nullptr;
+  static PassResult Error(const std::string & msg);
+  static PassResult Success(Node *root = nullptr);
+
+  bool Ok() const { return success_; };
+  const std::string & Error() {  return error_; };
+  Node * Root() const { return root_; };
+
+private:
+  bool success_;
+  std::string error_;
+  Node * root_ = nullptr;
 };
 
 /**
    Context/config for passes
 */
+class SemanticAnalyser;
 struct PassContext
 {
   BPFtrace &b;
+  bool has_child;
+  size_t max_ast_nodes;
+  std::unique_ptr<SemanticAnalyser> semant;
 };
 
-using PassFPtr = std::function<PassResult(Node &, const PassContext &)>;
+using PassFPtr = std::function<PassResult(Node &, PassContext &)>;
 
 /*
   Base pass
@@ -47,7 +59,7 @@ public:
 
   virtual ~Pass() = default;
 
-  PassResult Run(Node &root, const PassContext &ctx)
+  PassResult Run(Node &root, PassContext &ctx)
   {
     return fn_(root, ctx);
   };
@@ -90,7 +102,7 @@ public:
   PassManager() = default;
 
   void AddPass(Pass p);
-  PMResult Run(Node &n, PassContext &ctx);
+  std::optional<Node *> Run(Node &n, PassContext &ctx);
 
 private:
   std::vector<Pass> passes_;
