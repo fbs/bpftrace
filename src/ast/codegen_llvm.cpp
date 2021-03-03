@@ -25,19 +25,15 @@
 namespace bpftrace {
 namespace ast {
 
-static std::unique_ptr<BpfOrc> CreateOrc()
-{
-  return BpfOrc::Create();
-}
-
 CodegenLLVM::CodegenLLVM(Node *root, BPFtrace &bpftrace)
     : root_(root),
       bpftrace_(bpftrace),
-      orc_(CreateOrc()),
+      orc_(BpfOrc::Create()),
       module_(std::make_unique<Module>("bpftrace", orc_->getContext())),
       b_(orc_->getContext(), *module_.get(), bpftrace)
 {
   module_->setDataLayout(datalayout());
+  module_->setTargetTriple(LLVMTargetTriple);
 }
 
 void CodegenLLVM::visit(Integer &integer)
@@ -2954,6 +2950,24 @@ std::unique_ptr<BpfOrc> CodegenLLVM::emit(void)
   assert(state_ == State::OPT);
   orc_->compile(move(module_));
   state_ = State::DONE;
+
+#ifdef LLVM_ORC_V2
+  auto has_sym = [this](const std::string &s) {
+    auto sym = orc_->lookup(s);
+    return (sym && sym->getAddress());
+  };
+  for (const auto &probe : bpftrace_.special_probes_)
+  {
+    if (has_sym(probe.name) || has_sym(probe.orig_name))
+      return std::move(orc_);
+  }
+  for (const auto &probe : bpftrace_.probes_)
+  {
+    if (has_sym(probe.name) || has_sym(probe.orig_name))
+      return std::move(orc_);
+  }
+#endif
+
   return std::move(orc_);
 }
 
