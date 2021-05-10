@@ -1,6 +1,7 @@
 #include "attachpoint_parser.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <exception>
 #include <functional>
 #include <string>
@@ -398,21 +399,19 @@ AttachPointParser::State AttachPointParser::uprobe_parser(bool allow_offset,
     if (allow_abs_addr)
     {
       // First try to parse as addr. If that fails, go with symbol name.
-      try
-      {
-        std::size_t idx;
-        ap_->address = std::stoll(parts_[2], &idx, 0);
+      char *end;
+      auto *start = parts_[2].c_str();
+      errno = 0;
+      // Can't use stoll, see https://github.com/iovisor/bpftrace/issues/1797
+      auto res = std::strtoll(start, &end, 0);
 
-        // If there are trailing non-numeric characters, we treat the argument
-        // as a string symbol. This exception will immediately be caught.
-        if (idx != parts_[2].size())
-        {
-          ap_->address = 0;
-          throw std::runtime_error("use string version");
-        }
-      }
-      catch (const std::exception &ex)
+      if (errno == 0 && start != end && *end == '\0')
       {
+        ap_->address = res;
+      }
+      else
+      {
+        ap_->address = 0;
         ap_->func = parts_[2];
       }
     }

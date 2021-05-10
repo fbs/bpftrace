@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
@@ -694,16 +695,10 @@ std::string str_join(const std::vector<std::string> &list, const std::string &de
 
 bool is_numeric(const std::string &s)
 {
-  std::size_t idx;
-  try
-  {
-    std::stoll(s, &idx, 0);
-  }
-  catch (...)
-  {
-    return false;
-  }
-  return idx == s.size();
+  char *end = nullptr;
+  // Can't use stoll, see https://github.com/iovisor/bpftrace/issues/1797
+  std::strtoll(s.c_str(), &end, 0);
+  return (size_t)(end - s.c_str()) == s.size();
 }
 
 bool symbol_has_cpp_mangled_signature(const std::string &sym_name)
