@@ -1,0 +1,157 @@
+#!/bin/bash
+
+# This runs the bpftrace runtime test suite in a kernel that is newer than the
+# CI supports, allowing us to test BTF
+#
+# How it works
+
+#
+# extend an existing debian image to:
+# 1. mount a host filesystem (vmtest) in /mnt
+# 2. run /mnt/run-tests at startup
+#
+# The test script runs the tests and writes the results (stdout,err) to run.log
+# and run.exitcode
+#
+# Prepare the vmtest directory by:
+#
+# 1. copying a static bpftrace build into it
+# 2. copying all required testing assets into it
+#
+# Once the setup has finished the VM spawns and after shutdown the
+# run.* files get inspected
+#
+
+function err {
+  >&2 echo "$*"
+  exit 10
+}
+
+function info {
+  echo "$*"
+}
+
+
+
+if [[ $# -ne 1 ]]; then
+  err "Usage: $0 path/to/bpftrace/build"
+fi
+
+IMG_URL="https://cloud.debian.org/images/cloud/bullseye/daily/20210514-637/debian-11-nocloud-amd64-daily-20210514-637.qcow2"
+
+if ! TEMPDIR=$(mktemp -d); then
+  err "Failed to create tempdir"
+fi
+
+IMG="${TEMPDIR}/img.qcow2"
+SHARE="${TEMPDIR}/vmtest" # Directory shared with VM
+MOUNT="${TEMPDIR}/mnt" # Temp mountpoint for disk image
+TMP="${TEMPDIR}/tmp"
+BPFTRACE="$1"
+
+if ! mkdir "$SHARE" "$MOUNT" "$TMP"; then
+  err "Failed to make required sub dirs"
+fi
+
+#apt install -y qemu-system-x86 libguestfs-tools
+
+function download_img() {
+  if ! wget --quiet -O "$IMG" "$IMG_URL"; then
+    err "Failed to download base image"
+  fi
+}
+
+function hack_img() {
+  guestmount -a "$IMG" -i --rw "$MOUNT"/ || err "failed to mount image"
+
+  cat << EOF > "${MOUNT}/etc/systemd/system/bpftrace.service"
+[Unit]
+Description=bpftrace test suite
+After=network-online.target
+Requires=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/mnt/run-tests
+ExecStartPre=/usr/bin/mount -t 9p host0 /mnt -o trans=virtio,version=9p2000.L
+ExecStartPre=/usr/sbin/shutdown -P 60
+TimeoutSec=1800
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  chroot "$MOUNT" systemctl enable bpftrace.service || err "failed to enable bpftrace service"
+  chroot "$MOUNT" systemctl mask ssh || err "failed mask unused services"
+  cp -r /usr/include/linux/ /usr/include/x86_64-linux-gnu /usr/include/asm-generic "${MOUNT}/usr/include/"
+
+  sync
+  guestunmount "$MOUNT" || err "failed to unmount image"
+  sleep 5
+}
+
+function setup_vmtest() {
+  local b="${SHARE}/bpftrace"
+  mkdir "$b"
+  cp -a "${BPFTRACE}/src/bpftrace" "${BPFTRACE}/tests/" "$b"
+  cp "${BPFTRACE}/tests/VM/run-tests" "${SHARE}/run-tests"
+  chmod +x "${SHARE}/run-tests"
+
+  echo "TEST_FILTER=$TEST_FILTER" > "${SHARE}/env"
+  find "${b}/tests/runtime" -maxdepth 1 -type f -print0 | \
+    xargs -0 sed -ri '/^TIMEOUT/{s/[0-9]+/20/}'
+}
+
+function run_vm() {
+  local port=55555
+
+  echo "Starting VM"
+  echo "Monitor is reachable via telnet 127.0.0.1 ${port}"
+  echo "------------------"
+
+  qemu-system-x86_64 -name bpftrace \
+    -m 1024 \
+    -smp 2 \
+    -nographic \
+    -no-reboot \
+    -object rng-random,id=rng0,filename=/dev/urandom -device virtio-rng-pci,rng=rng0 \
+    -vga cirrus -display none\
+    -drive file="$IMG" \
+    -monitor telnet:127.0.0.1:${port},server,nowait \
+    -serial stdio \
+    -virtfs local,path="$SHARE",mount_tag=host0,security_model=passthrough,id=host0
+}
+
+function report() {
+  cat "${SHARE}/run.log"
+  code="$(head -n1 "${SHARE}/run.exitcode")"
+
+  if [[ $code -eq 123 ]]; then
+    err "Test suite did not complete, status not captured"
+  fi
+  return $code
+}
+
+function cleanup() {
+  [ -d "${MOUNT}/etc" ] && guestunmount "$MOUNT"
+  rm -rf "$TEMPDIR"
+}
+
+set -e
+trap cleanup ERR EXIT
+
+info "Downloading base image"
+download_img
+
+info "Modifying base image"
+hack_img
+
+info "Creating share"
+setup_vmtest
+
+info "Running test"
+run_vm
+
+# exit using the return code from `report`
+report

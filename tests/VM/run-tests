@@ -1,0 +1,20 @@
+#!/bin/bash
+
+echo 123 > /mnt/run.exitcode
+cd /mnt/bpftrace/tests || exit 10
+
+source /mnt/env
+
+TEST_FILTER=${TEST_FILTER:-btf.*}
+
+export BPFTRACE_RUNTIME_TEST_EXECUTABLE="../"
+
+echo "Starting test suite" 
+start=$(date +%s)
+
+stdbuf -oL python3 -u runtime/engine/main.py --filter "$TEST_FILTER"  &> /mnt/run.log
+
+echo "$?" > /mnt/run.exitcode
+echo "Test suite completed in $(( $(date +%s) - start))" >> /mnt/run.log
+
+/usr/sbin/poweroff -p

@@ -5,7 +5,6 @@ if (STATIC_LIBC)
   # testprogs linking, so we clear the flags.
   unset(CMAKE_EXE_LINKER_FLAGS)
 endif()
-
 # Regenerate codegen_includes.cpp whenever anything in the tests/codegen
 # directory changes
 file(GLOB_RECURSE CODEGEN_SOURCES codegen/*.cpp codegen/*.h)
@@ -188,3 +187,5 @@ if(ENABLE_TEST_VALIDATE_CODEGEN)
 else()
   message(STATUS "codegen-validator test disabled")
 endif()
+
+file(COPY VM DESTINATION .)
