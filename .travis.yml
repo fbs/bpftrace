@@ -1,0 +1,18 @@
+sudo: required
+
+dist: focal
+
+language:
+  - python
+
+services:
+  - docker
+
+install:
+  - sudo apt update
+  - sudo apt install -y libguestfs-tools qemu-system-x86
+  - docker build -t bpftrace -f docker/Dockerfile.ubuntu-glibc --build-arg LLVM_VERSION=12 docker/
+  - docker run --privileged -v $(pwd):$(pwd) -w $(pwd) -e LLVM_VERSION=12 -e STATIC_LINKING=1 -e EMBED_USE_LLVM=1 -e RUN_TESTS=0 -e VENDOR_GTEST=1 bpftrace $(pwd)/build Debug -j$(nproc)
+
+script:
+  - sudo tests/VM/run-vm build
