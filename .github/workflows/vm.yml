@@ -1,0 +1,37 @@
+name: VM
+
+on: [push, pull_request]
+jobs:
+  vm:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Dependencies
+      run: sudo apt update && sudo apt install -y libguestfs-tools qemu-system-x86
+    - name: Build docker container
+      run: >
+        docker build
+        -t bpftrace
+        -f docker/Dockerfile.ubuntu-glibc
+        --build-arg BASE=bionic
+        --build-arg LLVM_VERSION=12
+        docker/
+    - name: bpftrace build
+      run: >
+        docker run --privileged
+        -v $(pwd):$(pwd)
+        -w $(pwd)
+        -v /sys/kernel/debug:/sys/kernel/debug:rw
+        -v /lib/modules:/lib/modules:ro
+        -v /usr/src:/usr/src:ro
+        -e LLVM_VERSION=12
+        -e STATIC_LINKING=ON
+        -e EMBED_USE_LLVM=ON
+        -e RUN_ALL_TESTS=OFF
+        -e VENDOR_GTEST=ON
+        bpftrace
+        $(pwd)/build ${TYPE}
+        -j`nproc`
+    - name: run vm
+      run: sudo ./tests/VM/run-vm build/
+
