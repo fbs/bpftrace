@@ -144,6 +144,18 @@ jobs:
         --entrypoint /bin/bash
         bpftrace-embedded-${{ matrix.env['BASE'] }}
         -c "echo SIZE: ; du -sh $(pwd)/build-embedded/src/bpftrace"
+    - name: ls test
+      run: >
+        ls -hal build-embedded/tests
+    - name: stat test
+      run: >
+        stat build-embedded/tests/core
+    - name: fix perm
+      run: sudo chmod 777 build-embedded/tests/core
+    - name: debug corefil
+      run: file build-embedded/tests/core
+    - name: dmseg
+      run: sudo dmesg
     - uses: actions/upload-artifact@v1
       with:
         name: bpftrace-${{ matrix.env['TYPE'] }}-${{ matrix.env['NAME'] }}
@@ -155,18 +167,14 @@ jobs:
 
     - name: Authenticate with docker registry
       if: >
-        matrix.env['TYPE'] == 'Release' &&
-        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) &&
-        github.repository == 'iovisor/bpftrace'
+        matrix.env['TYPE'] == 'Release'
       env:
         QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
       run: ./docker/scripts/auth.sh ${{ github.repository }}
 
     - name: Package docker image and push to quay.io
       if: >
-        matrix.env['TYPE'] == 'Release' &&
-        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) &&
-        github.repository == 'iovisor/bpftrace'
+        matrix.env['TYPE'] == 'Release'
       run: >
         ./docker/scripts/push.sh
         ${{ github.repository }}
