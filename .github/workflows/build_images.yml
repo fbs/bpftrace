@@ -1,0 +1,98 @@
+name: CI Images
+on:
+  push:
+    paths:
+      - docker/Dockerfile.llvm
+      - docker/Dockerfile.bionic
+      - docker/Dockerfile.ubuntu-glic
+      - docker/Dockerfile.alpine
+      - docker/build.sh
+  pull_request:
+    paths:
+      - docker/Dockerfile.llvm
+      - docker/Dockerfile.bionic
+      - docker/Dockerfile.ubuntu-glic
+      - docker/Dockerfile.alpine
+      - docker/build.sh
+  schedule:
+    - cron: '0 0 1 * *'
+
+jobs:
+  publish_llvm_images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        llvm_version: [8,12]
+        base: [xenial, bionic]
+        bcc_ref: ['v0.19.0']
+        libbpf_ref: ['092a606856']
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v2
+    - name: Build LLVM container
+      run: >
+        docker build
+        -t quay.io/iovisor/bpftrace-llvm:${{ matrix.base }}_${{ matrix.llvm_version }}
+        -t quay.io/iovisor/bpftrace-llvm:${{ matrix.base }}_${{ matrix.llvm_version }}_$(date +%s)
+        -f docker/Dockerfile.llvm
+        --build-arg BASE=${{ matrix.base }}
+        --build-arg BULD_TYPE="Release"
+        --build-arg LLVM_VERSION=${{ matrix.llvm_version }}
+        .
+    - name: Build embedded ci container
+      run: >
+        docker build
+        -f docker/Dockerfile.ubuntu-glibc
+        --build-arg bcc_ref=${{ matrix.bcc_ref }}
+        --build-arg libbpf_ref=${{ matrix.libbpf_ref }}
+        --build-arg BASE=${{ matrix.base }}
+        --build-arg LLVM_VERSION=${{ matrix.llvm_version }}
+        -t quay.io/iovisor/bpftrace-ci:embedded-${{ matrix.base }}_${{ matrix.llvm_version }}_bcc_${{ matrix.bcc_ref }}_libbpf_${{ matrix.libbpf_ref }}
+        -t quay.io/iovisor/bpftrace-ci:embedded-${{ matrix.base }}_${{ matrix.llvm_version }}_bcc_${{ matrix.bcc_ref }}_libbpf_${{ matrix.libbpf_ref }}_$(date +%s)
+        docker/
+    - name: Login quay.io
+      if: >
+        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) &&
+        github.repository == 'iovisor/bpftrace'
+      env:
+        QUAY_USER: "iovisor+bpftrace_buildbot"
+        QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+      run: 'echo "${QUAY_TOKEN}" | docker login -u="${QUAY_USER}" --password-stdin quay.io'
+    - name: Publish containers
+      if: >
+        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) &&
+        github.repository == 'iovisor/bpftrace'
+      run: |
+        docker push --all-tags quay.io/iovisor/bpftrace-llvm
+        docker push --all-tags quay.io/iovisor/bpftrace-ci
+
+  publish_ci_images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        llvm_version: [ '6.0', 7, 8, 9, 10, 11, 12 ]
+        base: [ bionic ]
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build docker container
+      run: >
+        docker build
+        --build-arg LLVM_VERSION=${{ matrix.llvm_version }}
+        -t quay.io/iovisor/bpftrace-ci:ci-${{ matrix.base }}_${{ matrix.llvm_version }}
+        -t quay.io/iovisor/bpftrace-ci:ci-${{ matrix.base }}_${{ matrix.llvm_version }}_$(date +%s)
+        -f docker/Dockerfile.${{ matrix.base }}
+        docker/
+    - name: Login quay.io
+      if: >
+        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) &&
+        github.repository == 'iovisor/bpftrace'
+      env:
+        QUAY_USER: "iovisor+bpftrace_buildbot"
+        QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+      run: 'echo "${QUAY_TOKEN}" | docker login -u="${QUAY_USER}" --password-stdin quay.io'
+    - name: Publish container
+      if: >
+        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')) &&
+        github.repository == 'iovisor/bpftrace'
+      run: docker push --all-tags quay.io/iovisor/bpftrace-ci
+
