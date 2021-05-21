@@ -85,6 +85,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Build docker container
+      if: ${{ matrix.env['BASE'] == 'alpine' }}
       run: >
         docker build
         -t bpftrace-embedded-${{ matrix.env['BASE'] }}
@@ -94,6 +95,14 @@ jobs:
         --build-arg LLVM_VERSION=${{ matrix.env['LLVM_VERSION'] }}
         --build-arg ALPINE_VERSION=${{ matrix.env['ALPINE_VERSION'] }}
         docker/
+    - name: select image
+      env: ${{ matrix.env }}
+      run: |
+        if [[ $BASE == 'alpine' ]]; then
+          echo "BPFTRACE_IMG=bpftrace-embedded-${BASE}" >> $GITHUB_ENV
+        else
+          echo "BPFTRACE_IMG=quay.io/iovisor/bpftrace-ci:embedded-${BASE}_${LLVM_VERSION}_bcc_v0.19.0_libbpf_092a606856" >> $GITHUB_ENV
+        fi
     - name: bpftrace embedded build
       env: ${{ matrix.env }}
       run: >
@@ -113,7 +122,7 @@ jobs:
         -e TEST_GROUPS_DISABLE="${TEST_GROUPS_DISABLE}"
         -e RUNTIME_TEST_DISABLE="${RUNTIME_TEST_DISABLE}"
         -e VENDOR_GTEST="${VENDOR_GTEST}"
-        bpftrace-embedded-${{ matrix.env['BASE'] }}
+        $BPFTRACE_IMG
         $(pwd)/build-embedded ${TYPE}
         -j`nproc`
     - name: Check linked libs
@@ -123,7 +132,7 @@ jobs:
         -v $(pwd):$(pwd)
         -w $(pwd)
         --entrypoint /bin/bash
-        bpftrace-embedded-${{ matrix.env['BASE'] }}
+        $BPFTRACE_IMG
         -c "[[ -f $(pwd)/build-embedded/src/bpftrace ]] && ! readelf --dynamic $(pwd)/build-embedded/src/bpftrace | grep NEEDED | grep -v 'libm\|libc\|ld-linux\|libpthread\|libdl\|librt\.so'"
     - name: Strip artifacts
       env: ${{ matrix.env }}
@@ -133,7 +142,7 @@ jobs:
         -v $(pwd):$(pwd)
         -w $(pwd)
         --entrypoint /bin/bash
-        bpftrace-embedded-${{ matrix.env['BASE'] }}
+        $BPFTRACE_IMG
         -c "strip --keep-symbol BEGIN_trigger --keep-symbol END_trigger $(pwd)/build-embedded/src/bpftrace"
     - name: Report size
       env: ${{ matrix.env }}
@@ -142,7 +151,7 @@ jobs:
         -v $(pwd):$(pwd)
         -w $(pwd)
         --entrypoint /bin/bash
-        bpftrace-embedded-${{ matrix.env['BASE'] }}
+        $BPFTRACE_IMG
         -c "echo SIZE: ; du -sh $(pwd)/build-embedded/src/bpftrace"
     - uses: actions/upload-artifact@v1
       with:
