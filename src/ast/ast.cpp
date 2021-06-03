@@ -373,6 +373,7 @@ Predicate::Predicate(Expression *expr, location loc) : Node(loc), expr(expr)
 AttachPoint::AttachPoint(const std::string &raw_input, location loc)
     : Node(loc), raw_input(raw_input)
 {
+  std::cout << "RAW AP: '" << raw_input << "'\n";
 }
 
 

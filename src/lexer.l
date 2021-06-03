@@ -28,17 +28,34 @@ oct      [0-7]{1,3}
 hspace   [ \t]
 vspace   [\n\r]
 space    {hspace}|{vspace}
-path     :(\\.|[_\-\./a-zA-Z0-9#\*])+
 builtin  arg[0-9]|args|cgroup|comm|cpid|cpu|ctx|curtask|elapsed|func|gid|nsecs|pid|probe|rand|retval|sarg[0-9]|tid|uid|username
 call     avg|buf|cat|cgroupid|clear|count|delete|exit|hist|join|kaddr|kptr|ksym|lhist|macaddr|max|min|ntop|override|print|printf|reg|signal|sizeof|stats|str|strftime|strncmp|sum|system|time|uaddr|uptr|usym|zero|path|unwatch
 
+ap_start ((kprobe|k|kretprobe|kr|uprobe|u|uretprobe|ur|usdt|tracepoint|t|profile|p|interval|i|software|s|hardware|h|watchpoint|w|asyncwatchpoint|aw|kfunc|f|kretfunc|fr|iter|it):)|BEGIN|END
+path     :(\\.|[_\-\./a-zA-Z0-9#\*])+
+ap_kv    {ident}=({ident}|"-"{int}|"$"[0-9])
+
 /* Don't add to this! Use builtin OR call not both */
 call_and_builtin kstack|ustack
+
+
 %x STR
 %x STRUCT
 %x ENUM
 %x BRACE
 %x COMMENT
+
+/**
+ * AttachPoints (APs) are not parsed by the parser due to their dynamic nature
+ * Instead of reconstructing the user input in the parser by handling all allowed symbols
+ * we can do this in the lexer. Instead of a set of tokens we return just one token, an `ATTACH_POINT`
+ * that contains the whole attach point.
+ *
+ * For the lexer to do this it needs to enter the 'ATTACH_POINT' state AP
+ */
+
+%x AP
+%x AP_STR
 
 %%
 
@@ -69,7 +86,6 @@ bpftrace|perf           { return Parser::make_STACK_MODE(yytext, loc); }
                             driver.error(loc, e.what());
                           }
                         }
-{path}                  { return Parser::make_PATH(yytext, loc); }
 {map}                   { return Parser::make_MAP(yytext, loc); }
 {var}                   { return Parser::make_VAR(yytext, loc); }
 ":"                     { return Parser::make_COLON(loc); }
@@ -131,28 +147,63 @@ bpftrace|perf           { return Parser::make_STACK_MODE(yytext, loc); }
 "break"                 { return Parser::make_BREAK(loc); }
 
 \"                      { yy_push_state(STR, yyscanner); buffer.clear(); }
-<STR>{
-  \"                    { yy_pop_state(yyscanner); return Parser::make_STRING(buffer, loc); }
-  [^\\\n\"]+            buffer += yytext;
-  \\n                   buffer += '\n';
-  \\t                   buffer += '\t';
-  \\r                   buffer += '\r';
-  \\\"                  buffer += '\"';
-  \\\\                  buffer += '\\';
-  \\{oct}               {
+
+<STR>\"                 { yy_pop_state(yyscanner); return Parser::make_STRING(buffer, loc); }
+<AP_STR>\"              { buffer += yytext; yy_pop_state(yyscanner); }
+
+<STR,AP_STR>[^\\\n\"]+  { buffer += yytext; }
+<STR,AP_STR>\\n         { buffer += '\n'; }
+<STR,AP_STR>\\t         { buffer += '\t'; }
+<STR,AP_STR>\\r         { buffer += '\r'; }
+
+<STR>\\\"               { buffer += '\"'; }
+<AP_STR>\\\"            { buffer += yytext; }
+
+<STR,AP_STR>\\\\        { buffer += '\\'; }
+<STR,AP_STR>\\{oct}     {
                             long value = strtol(yytext+1, NULL, 8);
                             if (value > UCHAR_MAX)
                               driver.error(loc, std::string("octal escape sequence out of range '") +
                                                 yytext + "'");
                             buffer += value;
                         }
-  \\{hex}               buffer += strtol(yytext+2, NULL, 16);
-  \n                    driver.error(loc, "unterminated string"); yy_pop_state(yyscanner); loc.lines(1); loc.step();
-  <<EOF>>               driver.error(loc, "unterminated string"); yy_pop_state(yyscanner);
-  \\.                   { driver.error(loc, std::string("invalid escape character '") +
-                                            yytext + "'"); }
-  .                     driver.error(loc, "invalid character"); yy_pop_state(yyscanner);
-}
+<STR,AP_STR>\\{hex}     { buffer += strtol(yytext+2, NULL, 16); }
+<STR,AP_STR>\n          { driver.error(loc, "unterminated string"); yy_pop_state(yyscanner); loc.lines(1); loc.step(); }
+<STR,AP_STR><<EOF>>     { driver.error(loc, "unterminated string"); yy_pop_state(yyscanner); }
+<STR,AP_STR>\\.         { driver.error(loc, std::string("invalid escape character '") + yytext + "'"); }
+<STR,AP_STR>.           { driver.error(loc, "invalid character"); yy_pop_state(yyscanner); }
+
+{ap_start}              {
+                          if ( yyps == YYParserState::PROBE_DEF ) {
+                            /* The ap_start regex includes a ':' which the path regex needs, just undo the whole input to make it easier */
+                            loc.columns(-yyleng);
+                            yyless(0);
+                            yy_push_state(AP, yyscanner);
+                            buffer.clear();
+                          } else {
+                            std::cout << "Rejecting AP state: '" << yytext << "'\n";
+                          }
+                        }
+
+<AP>:{ap_kv}(,{ap_kv})*: { buffer += yytext; }
+<AP>{ident}              { buffer += yytext; }
+<AP>{path}               { buffer += yytext; }
+<AP>[:*?+\[\]]           { buffer += yytext; }
+<AP>"$"[0-9]+            { buffer += yytext; }
+<AP>{int}                { buffer += yytext; }
+<AP>\"                   { buffer += yytext; yy_push_state(AP_STR, yyscanner);}
+
+ /* End condition */
+<AP>[ ,/"{\t\n"]         {
+                            yy_pop_state(yyscanner);
+                            yyless(0);
+                            loc.columns(-1);
+                            return Parser::make_ATTACH_POINT(buffer, loc);
+                         }
+
+<AP><<EOF>>              { yy_pop_state(yyscanner); driver.error(loc, "end of file in attachpoint"); }
+<AP>.                    { buffer += yytext; }
+
 
 struct|union|enum       yy_push_state(STRUCT, yyscanner); buffer.clear(); struct_type = yytext;
 <STRUCT,BRACE>{
