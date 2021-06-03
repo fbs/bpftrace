@@ -663,7 +663,7 @@ int main(int argc, char* argv[])
 
     Driver driver(bpftrace);
     driver.listing_ = true;
-    driver.source("stdin", script);
+    driver.source("stdin", "\a" + script);
 
     int err = driver.parse();
     if (err)

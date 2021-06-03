@@ -12,6 +12,12 @@
 
 %param { bpftrace::Driver &driver }
 %param { void *yyscanner }
+
+%initial-action
+{
+  yyps = YYParserState::PROBE_DEF;
+};
+
 %locations
 
 // Forward declarations of classes referenced in the parser
@@ -113,10 +119,11 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %token <std::string> PARAM "positional parameter"
 %token <long> INT "integer"
 %token <std::string> STACK_MODE "stack_mode"
+%token <std::string> ATTACH_POINT "attach point"
 
 
 %type <int> unary_op compound_op
-%type <std::string> attach_point_def c_definitions ident
+%type <std::string> c_definitions ident
 
 %type <ast::AttachPoint *> attach_point
 %type <ast::AttachPointList *> attach_points
@@ -155,7 +162,8 @@ void yyerror(bpftrace::Driver &driver, const char *s);
 %%
 
 program:
-                c_definitions probes { driver.root_ = new ast::Program($1, $2); }
+                c_definitions { yyps = YYParserState::PROBE_DEF; } probes
+                { driver.root_ = new ast::Program($1, $3); }
                 ;
 
 c_definitions:
@@ -171,10 +179,12 @@ probes:
                 ;
 
 probe:
-                attach_points pred block
+                attach_points { yyps = YYParserState::PROG_BLOCK; } pred block { yyps = YYParserState::PROBE_DEF; }
                 {
                   if (!driver.listing_)
-                    $$ = new ast::Probe($1, $2, $3);
+                  {
+                    $$ = new ast::Probe($1, $3, $4);
+                  }
                   else
                   {
                     error(@$, "unexpected listing query format");
@@ -184,7 +194,9 @@ probe:
         |       attach_points END
                 {
                   if (driver.listing_)
+                  {
                     $$ = new ast::Probe($1, nullptr, nullptr);
+                  }
                   else
                   {
                     error(@$, "unexpected end of file, expected {");
@@ -199,44 +211,13 @@ attach_points:
                 ;
 
 attach_point:
-                attach_point_def                { $$ = new ast::AttachPoint($1, @$); }
-                ;
-
-attach_point_def:
-                attach_point_def ident    { $$ = $1 + $2; }
-                // Since we're double quoting the STRING for the benefit of the
-                // AttachPointParser, we have to make sure we re-escape any double
-                // quotes.
-        |       attach_point_def STRING   { $$ = $1 + "\"" + std::regex_replace($2, std::regex("\""), "\\\"") + "\""; }
-        |       attach_point_def PATH     { $$ = $1 + $2; }
-        |       attach_point_def INT      { $$ = $1 + std::to_string($2); }
-        |       attach_point_def COLON    { $$ = $1 + ":"; }
-        |       attach_point_def DOT      { $$ = $1 + "."; }
-        |       attach_point_def PLUS     { $$ = $1 + "+"; }
-        |       attach_point_def MUL      { $$ = $1 + "*"; }
-        |       attach_point_def LBRACKET { $$ = $1 + "["; }
-        |       attach_point_def RBRACKET { $$ = $1 + "]"; }
-        |       attach_point_def param
-                {
-                  if ($2->ptype != PositionalParameterType::positional)
-                  {
-                    error(@$, "Not a positional parameter");
-                    YYERROR;
-                  }
-                  // "Un-parse" the positional parameter back into text so
-                  // we can give it to the AttachPointParser. This is kind of
-                  // a hack but there doesn't look to be any other way.
-                  $$ = $1 + "$" + std::to_string($2->n);
-                  delete $2;
-                }
-        |       %empty                    { $$ = ""; }
-                ;
+                ATTACH_POINT { $$ = new ast::AttachPoint($1, @1); }
+        ;
 
 pred:
                 DIV expr ENDPRED { $$ = new ast::Predicate($2, @$); }
         |        %empty           { $$ = nullptr; }
                 ;
-
 
 param:
                 PARAM {

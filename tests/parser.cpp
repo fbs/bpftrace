@@ -1164,24 +1164,6 @@ TEST(Parser, character_class_attach_point)
       "  int: 1\n");
 }
 
-TEST(Parser, wildcard_probetype)
-{
-  test("t*point:sched:sched_switch { 1; }",
-       "Program\n"
-       " tracepoint:sched:sched_switch\n"
-       "  int: 1\n");
-  test("*ware:* { 1; }",
-       "Program\n"
-       " hardware:*\n"
-       " software:*\n"
-       "  int: 1\n");
-  test("*:/bin/sh:* { 1; }",
-       "Program\n"
-       " uprobe:/bin/sh:*\n"
-       " usdt:/bin/sh:*\n"
-       "  int: 1\n");
-}
-
 TEST(Parser, wildcard_attach_points)
 {
   test("kprobe:sys_* { 1 }",

@@ -28,17 +28,28 @@ oct      [0-7]{1,3}
 hspace   [ \t]
 vspace   [\n\r]
 space    {hspace}|{vspace}
-path     :(\\.|[_\-\./a-zA-Z0-9#\*])+
 builtin  arg[0-9]|args|cgroup|comm|cpid|cpu|ctx|curtask|elapsed|func|gid|nsecs|pid|probe|rand|retval|sarg[0-9]|tid|uid|username
 call     avg|buf|cat|cgroupid|clear|count|delete|exit|hist|join|kaddr|kptr|ksym|lhist|macaddr|max|min|ntop|override|print|printf|reg|signal|sizeof|stats|str|strftime|strncmp|sum|system|time|uaddr|uptr|usym|zero|path|unwatch
 
+ap_type_long  (asyncwatchpoint|hardware|interval|iter|kfunc|kprobe|kretfunc|kretprobe|profile|software|tracepoint|uprobe|uretprobe|usdt|watchpoint)
+ap_type_short (aw|f|fr|h|i|it|k|kr|p|s|t|u|ur|w)
+ap_special    (BEGIN|END)
+
+path     :(\\.|[_\-\./a-zA-Z0-9#\*])+
+
 /* Don't add to this! Use builtin OR call not both */
 call_and_builtin kstack|ustack
+
+
 %x STR
 %x STRUCT
 %x ENUM
 %x BRACE
 %x COMMENT
+
+%x AP
+%x AP_STR
+%x AP_LIST
 
 %%
 
@@ -69,7 +80,6 @@ bpftrace|perf           { return Parser::make_STACK_MODE(yytext, loc); }
                             driver.error(loc, e.what());
                           }
                         }
-{path}                  { return Parser::make_PATH(yytext, loc); }
 {map}                   { return Parser::make_MAP(yytext, loc); }
 {var}                   { return Parser::make_VAR(yytext, loc); }
 ":"                     { return Parser::make_COLON(loc); }
@@ -131,30 +141,82 @@ bpftrace|perf           { return Parser::make_STACK_MODE(yytext, loc); }
 "break"                 { return Parser::make_BREAK(loc); }
 
 \"                      { yy_push_state(STR, yyscanner); buffer.clear(); }
-<STR>{
-  \"                    { yy_pop_state(yyscanner); return Parser::make_STRING(buffer, loc); }
-  [^\\\n\"]+            buffer += yytext;
-  \\n                   buffer += '\n';
-  \\t                   buffer += '\t';
-  \\r                   buffer += '\r';
-  \\\"                  buffer += '\"';
-  \\\\                  buffer += '\\';
-  \\{oct}               {
+
+<STR>\"                 { yy_pop_state(yyscanner); return Parser::make_STRING(buffer, loc); }
+<AP_STR>\"              { buffer += yytext; yy_pop_state(yyscanner); }
+
+<STR,AP_STR>[^\\\n\"]+  { buffer += yytext; }
+<STR,AP_STR>\\n         { buffer += '\n'; }
+<STR,AP_STR>\\t         { buffer += '\t'; }
+<STR,AP_STR>\\r         { buffer += '\r'; }
+
+<STR>\\\"               { buffer += '\"'; }
+<AP_STR>\\\"            { buffer += yytext; }
+
+<STR,AP_STR>\\\\        { buffer += '\\'; }
+<STR,AP_STR>\\{oct}     {
                             long value = strtol(yytext+1, NULL, 8);
                             if (value > UCHAR_MAX)
                               driver.error(loc, std::string("octal escape sequence out of range '") +
                                                 yytext + "'");
                             buffer += value;
                         }
-  \\{hex}               buffer += strtol(yytext+2, NULL, 16);
-  \n                    driver.error(loc, "unterminated string"); yy_pop_state(yyscanner); loc.lines(1); loc.step();
-  <<EOF>>               driver.error(loc, "unterminated string"); yy_pop_state(yyscanner);
-  \\.                   { driver.error(loc, std::string("invalid escape character '") +
-                                            yytext + "'"); }
-  .                     driver.error(loc, "invalid character"); yy_pop_state(yyscanner);
-}
+<STR,AP_STR>\\{hex}     { buffer += strtol(yytext+2, NULL, 16); }
+<STR,AP_STR>\n          { driver.error(loc, "unterminated string"); yy_pop_state(yyscanner); loc.lines(1); loc.step(); }
+<STR,AP_STR><<EOF>>     { driver.error(loc, "unterminated string"); yy_pop_state(yyscanner); }
+<STR,AP_STR>\\.         { driver.error(loc, std::string("invalid escape character '") + yytext + "'"); }
+<STR,AP_STR>.           { driver.error(loc, "invalid character"); yy_pop_state(yyscanner); }
 
-struct|union|enum       yy_push_state(STRUCT, yyscanner); buffer.clear(); struct_type = yytext;
+ /* Yes this is ugly due to wildcards being allowed in the tracepoint */
+(({ap_type_short}|{ap_type_long}):)|{ap_special} {
+                          if ( yyps == YYParserState::PROBE_DEF ) {
+                            /* The ap_start regex includes a ':' which the path regex needs, just undo the whole input to make it easier */
+                            loc.columns(-yyleng);
+                            yyless(0);
+                            yy_push_state(AP, yyscanner);
+                            buffer.clear();
+                          } else {
+                            std::cout << "Rejecting AP state: '" << yytext << "'\n";
+                          }
+                        }
+
+<AP>{ident}              { buffer += yytext; }
+<AP>{path}               { buffer += yytext; }
+<AP>[:*?+\[\]]           { buffer += yytext; }
+<AP>"$"[0-9]+            { buffer += yytext; }
+<AP>{int}                { buffer += yytext; }
+<AP>\"                   { buffer += yytext; yy_push_state(AP_STR, yyscanner);}
+
+ /* End condition */
+<AP>[ ,/"{\t\n"]         {
+                            yy_pop_state(yyscanner);
+                            yyless(0);
+                            loc.columns(-1);
+                            return Parser::make_ATTACH_POINT(buffer, loc);
+                         }
+
+<AP><<EOF>>              { yy_pop_state(yyscanner); return Parser::make_ATTACH_POINT(buffer, loc); }
+<AP>.                    { buffer += yytext; }
+
+ /* We use \a as a special char to signal listing */
+^\a                     { loc.columns(-1); buffer.clear(); yy_push_state(AP_LIST, yyscanner); }
+<AP_LIST>\"             { buffer += yytext; yy_push_state(AP_STR, yyscanner);}
+
+<AP_LIST>{ident}        { buffer += yytext; }
+<AP_LIST>{path}         { buffer += yytext; }
+<AP_LIST>[:*?+\[\]]     { buffer += yytext; }
+<AP_LIST>"$"[0-9]+      { buffer += yytext; }
+<AP_LIST>{int}          { buffer += yytext; }
+<AP_LIST>"*"            { buffer += yytext; }
+<AP_LIST>.              { buffer += yytext; }
+<AP_LIST>[[:cntrl:]]    { driver.error(loc, "invalid character"); }
+
+
+<AP_LIST>[ ,/"{\t\n"]   { auto p = Parser::make_ATTACH_POINT(buffer, loc); buffer.clear(); return p; }
+<AP_LIST><<EOF>>        { yy_pop_state(yyscanner); return Parser::make_ATTACH_POINT(buffer, loc); }
+
+
+struct|union|enum       { yy_push_state(STRUCT, yyscanner); buffer.clear(); struct_type = yytext; }
 <STRUCT,BRACE>{
   "*"|")"               {
                           if (YY_START == STRUCT)

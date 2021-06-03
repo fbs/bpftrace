@@ -11,7 +11,18 @@ typedef void* yyscan_t;
 #define YY_DECL bpftrace::Parser::symbol_type yylex(bpftrace::Driver &driver, yyscan_t yyscanner)
 YY_DECL;
 
+
 namespace bpftrace {
+
+/*
+ * State share between parser and lexer to indicate what to expect
+ */
+enum class YYParserState {
+  PROG_BLOCK, // program block
+  PROBE_DEF,  // probe / attach point parsing
+};
+
+extern YYParserState yyps;
 
 class Driver
 {

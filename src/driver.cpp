@@ -11,6 +11,8 @@ extern bpftrace::location loc;
 
 namespace bpftrace {
 
+YYParserState yyps = YYParserState::PROBE_DEF;
+
 Driver::Driver(BPFtrace &bpftrace, std::ostream &o)
     : bpftrace_(bpftrace), out_(o)
 {
