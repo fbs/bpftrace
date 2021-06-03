@@ -18,6 +18,8 @@
   yyps = YYParserState::PROBE_DEF;
 };
 
+%expect 4
+
 %locations
 
 // Forward declarations of classes referenced in the parser
