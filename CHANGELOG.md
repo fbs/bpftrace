@@ -9,6 +9,8 @@ and this project adheres to
 ## Unreleased
 
 #### Added
+- Add `_` as integer literal digit separator
+  - [#1900](https://github.com/iovisor/bpftrace/pull/1900)
 
 #### Changed
 
